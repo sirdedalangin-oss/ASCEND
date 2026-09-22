@@ -2,7 +2,9 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   ArrowRight,
+  Check,
   CheckCircle2,
+  ChevronsUpDown,
   CircleX,
   CloudUpload,
   FileText,
@@ -14,9 +16,19 @@ import {
 import { api } from '@/api/client';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from '@/components/ui/command';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { cn } from '@/lib/utils';
 import {
   defaultKeywordCategories,
   gradeOptionsByStage,
@@ -56,6 +68,7 @@ export default function Upload() {
   const [selectedKeywordIds, setSelectedKeywordIds] = useState([]);
   const [keywordCategory, setKeywordCategory] = useState('literacy');
   const [newKeyword, setNewKeyword] = useState('');
+  const [keywordPickerOpen, setKeywordPickerOpen] = useState(false);
   const [loadingKeywords, setLoadingKeywords] = useState(true);
   const [keywordError, setKeywordError] = useState('');
   const [creatingKeyword, setCreatingKeyword] = useState(false);
@@ -226,45 +239,78 @@ export default function Upload() {
         {loadingKeywords ? (
           <div className="flex items-center gap-2 py-6 text-sm text-muted-foreground"><LoaderCircle className="h-4 w-4 animate-spin" /> Loading keywords…</div>
         ) : (
-          <div className="mt-4 space-y-4">
-            {groupedKeywords.filter((group) => group.keywords.length > 0).map((group) => (
-              <fieldset key={group.value}>
-                <legend className="mb-2 text-xs font-medium text-muted-foreground">{group.label}</legend>
-                <div className="flex flex-wrap gap-2">
-                  {group.keywords.map((keyword) => {
-                    const selected = selectedKeywordIds.includes(keyword.id);
-                    return (
-                      <Button
-                        key={keyword.id}
-                        type="button"
-                        variant={selected ? 'default' : 'outline'}
-                        size="sm"
-                        className="h-8 rounded-full text-xs"
-                        disabled={!selected && selectedKeywordIds.length >= 15}
-                        aria-pressed={selected}
-                        onClick={() => toggleKeyword(keyword.id)}
-                      >
-                        {keyword.name}
-                      </Button>
-                    );
-                  })}
-                </div>
-              </fieldset>
-            ))}
-
-            <div className="grid gap-2 border-t pt-4 sm:grid-cols-[minmax(0,1fr)_minmax(12rem,0.7fr)_auto]">
-              <Input value={newKeyword} onChange={(event) => setNewKeyword(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); createKeyword(); } }} placeholder="Add a custom keyword" maxLength={60} aria-label="New keyword" />
-              <Select value={keywordCategory} onValueChange={setKeywordCategory}>
-                <SelectTrigger aria-label="New keyword category"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {Object.entries(keywordCategories).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}
-                </SelectContent>
-              </Select>
-              <Button type="button" variant="outline" onClick={createKeyword} disabled={!newKeyword.trim() || creatingKeyword || selectedKeywordIds.length >= 15}>
-                {creatingKeyword ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />} Add
+          <Popover open={keywordPickerOpen} onOpenChange={setKeywordPickerOpen}>
+            <PopoverTrigger asChild>
+              <Button
+                type="button"
+                variant="outline"
+                role="combobox"
+                aria-expanded={keywordPickerOpen}
+                className="mt-4 w-full justify-between font-normal"
+              >
+                <span className={cn(selectedKeywordIds.length === 0 && 'text-muted-foreground')}>
+                  {selectedKeywordIds.length > 0
+                    ? `${selectedKeywordIds.length} keyword${selectedKeywordIds.length === 1 ? '' : 's'} selected`
+                    : 'Select keywords'}
+                </span>
+                <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
               </Button>
-            </div>
-          </div>
+            </PopoverTrigger>
+            <PopoverContent align="start" className="w-[var(--radix-popover-trigger-width)] p-0">
+              <Command>
+                <CommandInput placeholder="Search keywords..." />
+                <CommandList>
+                  <CommandEmpty>No keyword found.</CommandEmpty>
+                  {groupedKeywords.filter((group) => group.keywords.length > 0).map((group) => (
+                    <CommandGroup key={group.value} heading={group.label}>
+                      {group.keywords.map((keyword) => {
+                        const selected = selectedKeywordIds.includes(keyword.id);
+                        return (
+                          <CommandItem
+                            key={keyword.id}
+                            value={`${group.label} ${keyword.name}`}
+                            disabled={!selected && selectedKeywordIds.length >= 15}
+                            onSelect={() => toggleKeyword(keyword.id)}
+                          >
+                            <Check className={cn('h-4 w-4', selected ? 'opacity-100' : 'opacity-0')} />
+                            <span>{keyword.name}</span>
+                          </CommandItem>
+                        );
+                      })}
+                    </CommandGroup>
+                  ))}
+                </CommandList>
+
+                <div className="space-y-2 border-t p-3">
+                  <p className="text-xs font-medium text-muted-foreground">Add a custom keyword</p>
+                  <Input
+                    value={newKeyword}
+                    onChange={(event) => setNewKeyword(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter') {
+                        event.preventDefault();
+                        createKeyword();
+                      }
+                    }}
+                    placeholder="New keyword"
+                    maxLength={60}
+                    aria-label="New keyword"
+                  />
+                  <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
+                    <Select value={keywordCategory} onValueChange={setKeywordCategory}>
+                      <SelectTrigger aria-label="New keyword category"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        {Object.entries(keywordCategories).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                    <Button type="button" variant="outline" onClick={createKeyword} disabled={!newKeyword.trim() || creatingKeyword || selectedKeywordIds.length >= 15}>
+                      {creatingKeyword ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />} Add
+                    </Button>
+                  </div>
+                </div>
+              </Command>
+            </PopoverContent>
+          </Popover>
         )}
         {keywordError && <p role="alert" className="mt-3 text-xs text-rose-600">{keywordError}</p>}
       </Card>
