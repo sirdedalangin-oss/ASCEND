@@ -1,0 +1,16 @@
+{
+  "name": "ASCEND Innovation-to-Scale System",
+  "short_name": "ASCEND",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#0d4f80",
+  "icons": [
+    {
+      "src": "/ascend-favicon.png",
+      "sizes": "74x61",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}
