@@ -1,0 +1,18 @@
+DirectoryIndex index.html
+
+<IfModule mod_rewrite.c>
+    Options -MultiViews -Indexes
+    RewriteEngine On
+
+    # Send API requests to the Laravel front controller included in this build.
+    RewriteCond %{REQUEST_URI} ^/api(?:/|$) [NC]
+    RewriteRule ^ index.php [L,QSA]
+
+    # Serve built assets and the public storage symlink directly.
+    RewriteCond %{REQUEST_FILENAME} -d [OR]
+    RewriteCond %{REQUEST_FILENAME} -f
+    RewriteRule ^ - [L]
+
+    # React Router fallback.
+    RewriteRule ^ index.html [L]
+</IfModule>

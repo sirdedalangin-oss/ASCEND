@@ -1,6 +1,8 @@
 #env
 .env
 .env.*
+!.env.example
+!**/.env.example
 
 # Logs
 /logs
@@ -27,7 +29,5 @@ dist-ssr
 *.sln
 *.sw?
 
-.env
 .vite
-base44/.app.jsonc
 

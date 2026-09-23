@@ -2,46 +2,62 @@
 
 Local full-stack version of the SDO Bulacan Project ASCEND application.
 
-- **Frontend:** React 18 + Vite + Tailwind CSS
-- **Backend:** Laravel 13 REST API
-- **Database:** MySQL/MariaDB (local XAMPP-compatible setup)
-- **Authentication:** Local bearer-token authentication
-- **Uploads:** Laravel public storage
-- **Scalability assessment:** Administrator-entered ratings under the Innovation Scalability Framework
+## Project layout
+
+- `ascend-app/` - Laravel 13 REST API, MySQL/MariaDB migrations, tests, and manuscript storage.
+- `ascendtest.bulacandeped.com.ph/` - React 18, Vite, and Tailwind CSS frontend.
+- `Innovation_Scalability_Framework.docx` - framework reference document.
+
+The frontend uses same-origin `/api` and `/storage` URLs. During local development, Vite proxies both paths to Laravel at `http://127.0.0.1:8000`.
 
 ## Requirements
 
-- PHP 8.3 or newer
+- PHP 8.3 or newer with PDO MySQL
 - Composer
+- MySQL or MariaDB
 - Node.js 20 or newer
 - npm
 
-## First-time setup
+## First-time local setup
+
+Backend:
 
 ```powershell
-npm install
-Set-Location backend
+Set-Location ascend-app
 composer install
+Copy-Item .env.example .env
 php artisan key:generate
 php artisan migrate
 php artisan db:seed
 php artisan storage:link
 ```
 
-## Run locally
+Set the local MySQL connection in `ascend-app/.env` before running migrations. Do not run `migrate:fresh` against an existing database.
 
-Open two terminals in the project directory.
-
-Terminal 1 — Laravel API:
+Frontend:
 
 ```powershell
-Set-Location backend
-php artisan serve --host=127.0.0.1 --port=8000
+Set-Location ascendtest.bulacandeped.com.ph
+npm ci
 ```
 
-Terminal 2 — Vite frontend:
+## Run locally
+
+Open two terminals from the repository root.
+
+Terminal 1 - Laravel API:
 
 ```powershell
+Set-Location ascend-app
+.\scripts\serve-local.ps1
+```
+
+The local launcher uses Laravel's development router and sets a writable PHP upload temp directory and 20 MB upload limit. The default PHP installation may allow only 2 MB files.
+
+Terminal 2 - React frontend:
+
+```powershell
+Set-Location ascendtest.bulacandeped.com.ph
 npm run dev -- --host 127.0.0.1 --port 5173
 ```
 
@@ -54,26 +70,51 @@ Email: admin@ascend.local
 Password: password
 ```
 
-New accounts can also be created from the registration page. Password reset links are returned directly in the UI because the local environment does not require an SMTP server.
+## cPanel deployment
 
-## Scalability decisions
+The intended cPanel home-directory layout is:
 
-Upload a manuscript to create an innovation awaiting assessment. An administrator enters 1–5 ratings for Potential Impact Across the Division (30%), Adaptability Across School Contexts (20%), Ease of Adoption and Implementation (20%), Sustainability (15%), and Resource Efficiency (15%). The final score is the sum of rating × weight divided by 5. A score of 75 or higher is scalable; the framework also assigns Qualified, Bronze, Silver, Gold, or Platinum levels. The Scalable Library includes only panel-validated innovations that meet the threshold.
+```text
+ascend-app/                         Laravel application (outside the web root)
+ascendtest.bulacandeped.com.ph/     Subdomain document root
+```
 
-Prior six-criterion scores remain stored for historical reference. They do not determine scalability under the new framework. Existing innovations need a new panel assessment. On an existing installation, run `php artisan migrate` from `backend/`; do not reset the database.
+1. Upload `ascend-app/` beside the subdomain document root.
+2. In `ascend-app/`, run `composer install --no-dev --optimize-autoloader`.
+3. Create `ascend-app/.env` with production values. Use `APP_ENV=production`, `APP_DEBUG=false`, the production URL, and the cPanel MySQL credentials.
+4. Run `php artisan key:generate`, `php artisan migrate --force`, `php artisan config:cache`, and `php artisan route:cache`.
+5. Build the frontend locally:
 
-## Checks
+   ```powershell
+   Set-Location ascendtest.bulacandeped.com.ph
+   npm ci
+   npm run build
+   ```
+
+6. Upload only the contents of `ascendtest.bulacandeped.com.ph/dist/` to the cPanel subdomain document root.
+7. From the subdomain document root, create the public upload link:
+
+   ```bash
+   ln -s ../ascend-app/storage/app/public storage
+   ```
+
+The frontend build includes `.htaccess` for React Router and `index.php` for forwarding same-domain `/api` requests to the sibling Laravel application. If the cPanel directory layout differs, update the backend path candidates in `public/index.php` before building.
+
+
+## Verification
 
 ```powershell
+Set-Location ascendtest.bulacandeped.com.ph
 npm run lint
 npm run build
-Set-Location backend
+
+Set-Location ..\ascend-app
 php artisan test
 ```
 
 ## API overview
 
-The Vite development server proxies `/api` and `/storage` to Laravel at `http://127.0.0.1:8000`.
+Uploading through `POST /api/manuscripts/submit` now creates an initial five-criterion framework assessment from distinct evidence indicators in the manuscript. The weighted score and classification are calculated by the shared framework service. The uploader can correct ratings and notes on their own unvalidated submission; administrators can edit any assessment and optionally mark it panel validated. The automatic notes list the indicators found and missing, so the initial rating can be checked against the manuscript.
 
 - `POST /api/auth/register`
 - `POST /api/auth/login`
@@ -83,6 +124,4 @@ The Vite development server proxies `/api` and `/storage` to Laravel at `http://
 - `POST /api/uploads`
 - `POST /api/manuscripts/submit`
 - `GET /api/scalability-framework`
-- `GET|POST /api/evaluations` (only administrators can create or change assessments)
-
-The manuscript analyzer extracts a title, learning focus, and summary from searchable PDF, DOCX, TXT, or Markdown files. It does not assign scalability ratings automatically.
+- `GET|POST /api/evaluations`
