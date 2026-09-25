@@ -39,6 +39,7 @@ class ManuscriptSubmissionController extends Controller
             'keyword_ids.*' => ['integer', 'distinct', Rule::exists(Keyword::class, 'id')],
         ], [
             'file.required_without' => 'Upload a manuscript file and try again.',
+            'file.uploaded' => 'The server could not receive this manuscript. Check that the PHP upload limit allows files up to 20 MB, then retry.',
         ]);
 
         if (! Innovation::gradeMatchesStage($data['key_stage'], $data['grade_levels'])) {

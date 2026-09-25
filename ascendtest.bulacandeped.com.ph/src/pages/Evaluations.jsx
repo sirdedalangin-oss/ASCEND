@@ -9,16 +9,29 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectSeparator, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Textarea } from '@/components/ui/textarea';
-import { ExternalLink, Eye, FileCheck2, FileText, Loader2, Pencil, Plus, Search, Trash2 } from 'lucide-react';
+import { ArrowLeft, ArrowRight, ChevronLeft, ChevronRight, ExternalLink, Eye, FileCheck2, FileText, Loader2, Pencil, Plus, Search, Trash2 } from 'lucide-react';
+
+const PAGE_SIZE = 10;
+
+function pageNumbers(currentPage, totalPages) {
+  if (totalPages <= 5) return Array.from({ length: totalPages }, (_, index) => index + 1);
+  const start = Math.max(1, Math.min(currentPage - 2, totalPages - 4));
+  return Array.from({ length: 5 }, (_, index) => start + index);
+}
+
+function normalizedFocus(value) {
+  return value?.trim().toLowerCase() || '';
+}
 
 const gradeLevelsByStage = {
   KS1: 'Grades 1-3',
   KS2: 'Grades 4-6',
   KS3: 'Grades 7-10',
   KS4: 'Grades 11-12',
+  ALL: 'All grade levels',
 };
 
 function emptyForm() {
@@ -46,9 +59,9 @@ function recordToForm(record) {
     author: record.author || '',
     school: record.school || '',
     district: record.district || '',
-    learning_focus: record.learning_focus || 'numeracy',
+    learning_focus: normalizedFocus(record.learning_focus) || 'numeracy',
     key_stage: record.key_stage || 'KS1',
-    grade_levels: record.grade_levels || 'Grades 1-3',
+    grade_levels: record.grade_levels || gradeLevelsByStage[record.key_stage] || 'Grades 1-3',
     status: record.framework_score != null && record.status === 'validated' ? 'validated' : 'evaluated',
     framework_ratings: record.framework_ratings || {},
     framework_notes: record.framework_notes || '',
@@ -149,14 +162,17 @@ export default function Evaluations() {
   const [searchParams, setSearchParams] = useSearchParams();
   const canAssess = user?.role === 'admin';
   const [evaluations, setEvaluations] = useState([]);
-  const [availableInnovations, setAvailableInnovations] = useState([]);
+  const [candidates, setCandidates] = useState([]);
   const [framework, setFramework] = useState(null);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [focusFilter, setFocusFilter] = useState('all');
   const [decisionFilter, setDecisionFilter] = useState('all');
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [currentPage, setCurrentPage] = useState(1);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState(null);
+  const [reviewing, setReviewing] = useState(false);
   const [form, setForm] = useState(emptyForm);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -164,43 +180,60 @@ export default function Evaluations() {
   const [error, setError] = useState('');
 
   useEffect(() => {
+    setLoading(true);
     Promise.all([
-      api.evaluations.list(),
-      api.innovations.list({ sort: '-created_at', limit: 500 }),
+      api.evaluations.list({ limit: 500 }),
+      canAssess ? api.evaluations.candidates() : Promise.resolve([]),
       api.framework.get(),
     ])
-      .then(([evaluationRecords, innovationRecords, frameworkData]) => {
+      .then(([evaluationRecords, candidateRecords, frameworkData]) => {
         setEvaluations(evaluationRecords);
-        setAvailableInnovations(innovationRecords);
+        setCandidates(candidateRecords);
         setFramework(frameworkData);
       })
       .catch((requestError) => setError(requestError.message || 'Unable to load framework assessments.'))
       .finally(() => setLoading(false));
-  }, []);
+  }, [canAssess]);
 
   useEffect(() => {
     const editId = searchParams.get('edit');
     if (loading || !editId || !user) return;
-
-    const record = evaluations.find((evaluation) => String(evaluation.id) === editId);
-    if (record && (canAssess || (record.created_by_id === user.id && record.status !== 'validated'))) {
-      setEditing(record);
-      setForm(recordToForm(record));
-      setError('');
-      setDialogOpen(true);
-    }
-    setSearchParams({}, { replace: true });
+    let cancelled = false;
+    const listed = evaluations.find((evaluation) => String(evaluation.id) === editId);
+    const lookup = listed ? Promise.resolve(listed) : api.evaluations.get(editId);
+    lookup.then((record) => {
+      if (cancelled) return;
+      if (record.framework_score != null && (canAssess || (record.created_by_id === user.id && record.status !== 'validated'))) {
+        setEditing(record);
+        setForm(recordToForm(record));
+        setReviewing(false);
+        setError('');
+        setDialogOpen(true);
+      }
+    }).catch((requestError) => {
+      if (!cancelled) setError(requestError.message || 'Unable to open this assessment.');
+    }).finally(() => {
+      if (!cancelled) setSearchParams({}, { replace: true });
+    });
+    return () => { cancelled = true; };
   }, [canAssess, evaluations, loading, searchParams, setSearchParams, user]);
 
   const filtered = useMemo(() => evaluations.filter((evaluation) => {
     const query = search.trim().toLowerCase();
     const matchesSearch = !query || [evaluation.title, evaluation.author, evaluation.school, evaluation.district]
       .some((value) => value?.toLowerCase().includes(query));
-    const matchesFocus = focusFilter === 'all' || evaluation.learning_focus === focusFilter;
+    const matchesFocus = focusFilter === 'all' || normalizedFocus(evaluation.learning_focus) === focusFilter;
     const matchesDecision = decisionFilter === 'all'
       || (decisionFilter === 'scalable' ? evaluation.is_scalable : !evaluation.is_scalable);
-    return matchesSearch && matchesFocus && matchesDecision;
-  }), [evaluations, focusFilter, search, decisionFilter]);
+    const matchesStatus = statusFilter === 'all'
+      || (statusFilter === 'validated' ? evaluation.status === 'validated'
+        : statusFilter === 'automatic' ? evaluation.evaluation_method === 'automatic_manuscript_review'
+          : evaluation.status !== 'validated' && evaluation.evaluation_method !== 'automatic_manuscript_review');
+    return matchesSearch && matchesFocus && matchesDecision && matchesStatus;
+  }), [evaluations, focusFilter, search, decisionFilter, statusFilter]);
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const page = Math.min(currentPage, totalPages);
+  const pageItems = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   const allRated = framework?.criteria.every(({ key }) => {
     const rating = Number(form.framework_ratings[key]);
@@ -212,8 +245,12 @@ export default function Evaluations() {
   const previewLevel = previewScore == null
     ? null
     : framework.levels.find((level) => previewScore >= level.minimum)?.title;
-  const unassessedInnovations = availableInnovations.filter((innovation) => innovation.framework_score == null);
-  const selectedInnovation = availableInnovations.find((innovation) => String(innovation.id) === form.innovation_id)
+  const candidateGroups = [
+    { key: 'literacy', label: 'LITERACY', items: candidates.filter((innovation) => normalizedFocus(innovation.learning_focus) === 'literacy') },
+    { key: 'numeracy', label: 'NUMERACY', items: candidates.filter((innovation) => normalizedFocus(innovation.learning_focus) === 'numeracy') },
+  ];
+  const selectedCandidate = candidates.find((innovation) => String(innovation.id) === form.innovation_id);
+  const selectedInnovation = selectedCandidate
     || editing;
 
   function canEditAssessment(assessment) {
@@ -230,6 +267,7 @@ export default function Evaluations() {
   function openCreate() {
     setEditing(null);
     setForm(emptyForm());
+    setReviewing(false);
     setError('');
     setDialogOpen(true);
   }
@@ -237,6 +275,7 @@ export default function Evaluations() {
   function openEdit(evaluation) {
     setEditing(evaluation);
     setForm(recordToForm(evaluation));
+    setReviewing(false);
     setError('');
     setDialogOpen(true);
   }
@@ -253,8 +292,11 @@ export default function Evaluations() {
   }
 
   function selectInnovation(value) {
-    const innovation = availableInnovations.find((record) => String(record.id) === value);
-    if (innovation) setForm(recordToForm(innovation));
+    const innovation = candidates.find((record) => String(record.id) === value);
+    if (innovation) {
+      setForm(recordToForm(innovation));
+      setError('');
+    }
   }
 
   function updateKeyStage(value) {
@@ -263,7 +305,12 @@ export default function Evaluations() {
 
   async function saveEvaluation(event) {
     event.preventDefault();
-    if (!(editing ? canEditAssessment(editing) : canAssess) || !allRated) return;
+    if (saving || !(editing ? canEditAssessment(editing) : canAssess) || !reviewing) return;
+    if (!form.innovation_id || !allRated || !form.title.trim() || !form.grade_levels.trim() || (!editing && !selectedCandidate)) {
+      setReviewing(false);
+      setError('Select an eligible innovation and complete all five ratings and required fields.');
+      return;
+    }
     setSaving(true);
     setError('');
 
@@ -276,15 +323,23 @@ export default function Evaluations() {
       };
       const saved = editing
         ? await api.evaluations.update(editing.id, payload)
-        : await api.evaluations.create(payload);
+        : selectedCandidate.assessment_action === 'review'
+          ? await api.evaluations.review(selectedCandidate.id, payload)
+          : await api.evaluations.create(payload);
 
       setEvaluations((current) => current.some((evaluation) => evaluation.id === saved.id)
         ? current.map((evaluation) => evaluation.id === saved.id ? saved : evaluation)
         : [saved, ...current]);
-      setAvailableInnovations((current) => current.map((innovation) => innovation.id === saved.id ? saved : innovation));
+      setCandidates((current) => current.filter((innovation) => innovation.id !== saved.id));
       setDialogOpen(false);
     } catch (requestError) {
       setError(requestError.message || 'Unable to save the framework assessment.');
+      if (!editing && requestError.status === 409) {
+        setReviewing(false);
+        setForm(emptyForm());
+        api.evaluations.candidates().then(setCandidates).catch(() => {});
+        api.evaluations.list({ limit: 500 }).then(setEvaluations).catch(() => {});
+      }
     } finally {
       setSaving(false);
     }
@@ -298,9 +353,7 @@ export default function Evaluations() {
     try {
       const result = await api.evaluations.remove(deleteTarget.id);
       setEvaluations((current) => current.filter((evaluation) => evaluation.id !== deleteTarget.id));
-      setAvailableInnovations((current) => current.map((innovation) => (
-        innovation.id === deleteTarget.id ? result.innovation : innovation
-      )));
+      setCandidates((current) => [...current.filter((innovation) => innovation.id !== deleteTarget.id), { ...result.innovation, assessment_action: 'create' }]);
       setDeleteTarget(null);
     } catch (requestError) {
       setError(requestError.message || 'Unable to remove the framework assessment.');
@@ -319,10 +372,11 @@ export default function Evaluations() {
             Manuscripts receive automatic ratings that uploaders and administrators can correct. Administrators may validate the final assessment.
           </p>
         </div>
-        {canAssess && <Button onClick={openCreate}><Plus className="w-4 h-4 mr-2" /> New Assessment</Button>}
+        {canAssess && <Button onClick={openCreate} disabled={loading || candidates.length === 0}><Plus className="w-4 h-4 mr-2" /> New Assessment</Button>}
       </div>
 
       {!canAssess && <Card className="p-4 text-sm text-muted-foreground">You can correct ratings for manuscripts you uploaded. Only administrators can validate assessments.</Card>}
+      {canAssess && !loading && candidates.length === 0 && !error && <Card className="border-primary/15 bg-primary/[0.04] p-4 text-sm text-muted-foreground">No innovations currently need a new or panel assessment. Uploaded manuscripts with automatic ratings appear here for panel review; completed panel assessments can be edited from the list below.</Card>}
       {error && !dialogOpen && <Card className="p-4 text-sm text-rose-700">{error}</Card>}
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -334,9 +388,9 @@ export default function Evaluations() {
       <div className="flex flex-col lg:flex-row gap-3">
         <div className="relative flex-1">
           <Search className="w-4 h-4 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2" />
-          <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search title, proponent, school, or district..." aria-label="Search assessments" className="pl-9" />
+          <Input value={search} onChange={(event) => { setSearch(event.target.value); setCurrentPage(1); }} placeholder="Search title, proponent, school, or district..." aria-label="Search assessments" className="pl-9" />
         </div>
-        <Select value={focusFilter} onValueChange={setFocusFilter}>
+        <Select value={focusFilter} onValueChange={(value) => { setFocusFilter(value); setCurrentPage(1); }}>
           <SelectTrigger className="w-full lg:w-44" aria-label="Learning focus filter"><SelectValue /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All focus areas</SelectItem>
@@ -344,7 +398,7 @@ export default function Evaluations() {
             <SelectItem value="literacy">Literacy</SelectItem>
           </SelectContent>
         </Select>
-        <Select value={decisionFilter} onValueChange={setDecisionFilter}>
+        <Select value={decisionFilter} onValueChange={(value) => { setDecisionFilter(value); setCurrentPage(1); }}>
           <SelectTrigger className="w-full lg:w-44" aria-label="Scalability decision filter"><SelectValue /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All decisions</SelectItem>
@@ -352,7 +406,13 @@ export default function Evaluations() {
             <SelectItem value="not-scalable">Not scalable</SelectItem>
           </SelectContent>
         </Select>
+        <Select value={statusFilter} onValueChange={(value) => { setStatusFilter(value); setCurrentPage(1); }}>
+          <SelectTrigger className="w-full lg:w-44" aria-label="Assessment status filter"><SelectValue /></SelectTrigger>
+          <SelectContent><SelectItem value="all">All statuses</SelectItem><SelectItem value="automatic">Automatic review</SelectItem><SelectItem value="reviewed">Panel or owner reviewed</SelectItem><SelectItem value="validated">Panel validated</SelectItem></SelectContent>
+        </Select>
       </div>
+
+      {!loading && <p className="text-xs text-muted-foreground">Showing {filtered.length === 0 ? 0 : (page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, filtered.length)} of {filtered.length} matching assessments</p>}
 
       <Card className="overflow-hidden">
         {loading ? (
@@ -361,11 +421,11 @@ export default function Evaluations() {
           <div className="py-16 text-center px-4">
             <FileCheck2 className="w-10 h-10 text-muted-foreground/40 mx-auto mb-3" />
             <p className="font-medium text-sm">No framework assessments found</p>
-            <p className="text-xs text-muted-foreground mt-1">Select an innovation and enter all five ratings to assess scalability.</p>
+            <p className="text-xs text-muted-foreground mt-1">{evaluations.length === 0 ? 'Eligible innovations can be assessed from New Assessment.' : 'Try another search or filter.'}</p>
           </div>
         ) : <>
           <div className="divide-y divide-border md:hidden">
-            {filtered.map((evaluation) => (
+            {pageItems.map((evaluation) => (
               <article key={evaluation.id} className="min-w-0 space-y-3 p-4">
                 <div className="flex min-w-0 items-start justify-between gap-3"><div className="min-w-0"><h2 className="break-words text-sm font-semibold">{evaluation.title}</h2><p className="mt-1 break-words text-xs text-muted-foreground">{[evaluation.author, evaluation.school].filter(Boolean).join(' · ') || 'No proponent details'}</p></div><span className="shrink-0 rounded-lg bg-primary/10 px-2 py-1 text-xs font-bold text-primary">{evaluation.framework_score}/100</span></div>
                 <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground"><span>{evaluation.framework_level}</span><span>{assessmentStatus(evaluation)}</span><span>{evaluation.framework_assessed_at ? new Date(evaluation.framework_assessed_at).toLocaleDateString() : '—'}</span></div>
@@ -378,7 +438,7 @@ export default function Evaluations() {
               <TableHead>Innovation</TableHead><TableHead>Score</TableHead><TableHead>Classification</TableHead><TableHead>Status</TableHead><TableHead>Assessed</TableHead><TableHead className="text-right">Actions</TableHead>
             </TableRow></TableHeader>
             <TableBody>
-              {filtered.map((evaluation) => (
+              {pageItems.map((evaluation) => (
                 <TableRow key={evaluation.id}>
                   <TableCell>
                     <div className="font-medium max-w-md truncate">{evaluation.title}</div>
@@ -405,6 +465,7 @@ export default function Evaluations() {
           </Table></div>
         </>}
       </Card>
+      {!loading && filtered.length > PAGE_SIZE && <nav aria-label="Assessment pages" className="flex flex-wrap items-center justify-center gap-1"><Button type="button" variant="outline" size="sm" onClick={() => setCurrentPage(page - 1)} disabled={page === 1}><ChevronLeft className="h-4 w-4" /> Previous</Button>{pageNumbers(page, totalPages).map((pageNumber) => <Button type="button" key={pageNumber} variant={pageNumber === page ? 'default' : 'outline'} size="icon" className="h-8 w-8" onClick={() => setCurrentPage(pageNumber)} aria-label={`Page ${pageNumber}`} aria-current={pageNumber === page ? 'page' : undefined}>{pageNumber}</Button>)}<Button type="button" variant="outline" size="sm" onClick={() => setCurrentPage(page + 1)} disabled={page === totalPages}>Next <ChevronRight className="h-4 w-4" /></Button></nav>}
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="max-h-[92dvh] w-[calc(100vw-2rem)] max-w-7xl overflow-x-hidden overflow-y-auto">
@@ -415,6 +476,12 @@ export default function Evaluations() {
             </DialogHeader>
             {error && <div className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</div>}
 
+            {reviewing ? <div className="space-y-5">
+              <div className="rounded-xl border border-primary/15 bg-primary/[0.04] p-5"><p className="text-[11px] font-bold uppercase tracking-[0.16em] text-primary">Review assessment</p><h3 className="mt-2 break-words text-lg font-semibold">{form.title}</h3><p className="mt-1 text-sm text-muted-foreground">{[form.author, form.school, form.district].filter(Boolean).join(' · ') || 'Proponent details not recorded'}</p><div className="mt-3 flex flex-wrap gap-2 text-xs"><span className="rounded-full border bg-card px-2.5 py-1 capitalize">{form.learning_focus}</span><span className="rounded-full border bg-card px-2.5 py-1">{form.key_stage} · {form.grade_levels}</span><span className="rounded-full border bg-card px-2.5 py-1 capitalize">{form.status === 'validated' ? 'Panel validated' : 'Assessed'}</span></div></div>
+              <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_15rem]"><div className="space-y-2">{framework?.criteria.map((criterion) => <div key={criterion.key} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border px-3 py-2 text-sm"><span>{criterion.label} <span className="text-xs text-muted-foreground">({criterion.weight}%)</span></span><strong>{form.framework_ratings[criterion.key]}/5</strong></div>)}</div><div className="flex flex-col justify-center rounded-xl border bg-card p-4 text-center"><span className="text-xs text-muted-foreground">Final scalability score</span><strong className="mt-1 text-3xl text-primary">{previewScore}/100</strong><span className="mt-2 text-sm font-medium">{previewLevel}</span></div></div>
+              {(form.framework_notes || form.recommendation) && <div className="grid gap-4 text-sm sm:grid-cols-2"><div><h4 className="font-semibold">Rating notes and evidence</h4><p className="mt-1 whitespace-pre-line text-muted-foreground">{form.framework_notes || 'None provided'}</p></div><div><h4 className="font-semibold">Recommendation</h4><p className="mt-1 whitespace-pre-line text-muted-foreground">{form.recommendation || 'None provided'}</p></div></div>}
+              <DialogFooter><Button type="button" variant="outline" onClick={() => setReviewing(false)} disabled={saving}><ArrowLeft className="mr-1.5 h-4 w-4" /> Back to edit</Button><Button type="submit" disabled={saving}>{saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}{editing ? 'Save Changes' : selectedCandidate?.assessment_action === 'review' ? 'Submit Panel Review' : 'Submit Assessment'}</Button></DialogFooter>
+            </div> : <>
             <div>
               <Label>Innovation <span className="text-rose-600">*</span></Label>
               {editing ? (
@@ -422,14 +489,18 @@ export default function Evaluations() {
               ) : (
                 <Select value={form.innovation_id} onValueChange={selectInnovation}>
                   <SelectTrigger className="mt-1" aria-label="Innovation"><SelectValue placeholder="Select an innovation to assess" /></SelectTrigger>
-                  <SelectContent>
-                    {unassessedInnovations.map((innovation) => (
-                      <SelectItem key={innovation.id} value={String(innovation.id)}>{innovation.title}{innovation.school ? ` — ${innovation.school}` : ''}</SelectItem>
-                    ))}
+                  <SelectContent className="max-h-80 w-[min(35rem,calc(100vw-3rem))]">
+                    {candidateGroups.map((group, index) => <SelectGroup key={group.key}>
+                      {index > 0 && <SelectSeparator className="my-2" />}
+                      <SelectLabel className="px-3 py-2 text-[11px] font-bold uppercase tracking-[0.16em] text-primary">{group.label} INNOVATIONS <span className="ml-1 text-muted-foreground">({group.items.length})</span></SelectLabel>
+                      {group.items.map((innovation) => <SelectItem key={innovation.id} value={String(innovation.id)} textValue={innovation.title} className="px-3 py-2.5 pr-8"><span className="block max-w-[30rem] truncate font-medium">{innovation.title}</span><span className="block truncate text-xs text-muted-foreground">{innovation.school || 'School not recorded'} · {innovation.assessment_action === 'review' ? 'Automatic review to verify' : 'Not yet assessed'}</span></SelectItem>)}
+                      {group.items.length === 0 && <p className="px-3 py-2 text-xs text-muted-foreground">No eligible innovations</p>}
+                    </SelectGroup>)}
                   </SelectContent>
                 </Select>
               )}
-              {!editing && unassessedInnovations.length === 0 && <p className="text-xs text-muted-foreground mt-1">Upload or create an unassessed innovation first.</p>}
+              {!editing && candidates.length === 0 && <p className="mt-2 text-xs text-muted-foreground">No eligible innovations are available. Automatic manuscript reviews become available here until a panel assessment is recorded.</p>}
+              {!editing && selectedCandidate && <div className="mt-3 rounded-xl border border-primary/15 bg-primary/[0.04] p-4"><div className="flex flex-wrap items-center gap-2"><span className="rounded-full bg-primary/10 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-primary">{normalizedFocus(selectedCandidate.learning_focus)}</span><span className="text-xs font-medium text-muted-foreground">{selectedCandidate.assessment_action === 'review' ? 'Automatic ratings ready for panel review' : 'No framework assessment yet'}</span></div><h3 className="mt-2 break-words font-semibold">{selectedCandidate.title}</h3><dl className="mt-3 grid gap-3 text-xs sm:grid-cols-3"><div><dt className="text-muted-foreground">Proponent</dt><dd className="mt-0.5 font-medium">{selectedCandidate.author || 'Not recorded'}</dd></div><div><dt className="text-muted-foreground">School/Office</dt><dd className="mt-0.5 font-medium">{selectedCandidate.school || 'Not recorded'}</dd></div><div><dt className="text-muted-foreground">Current status</dt><dd className="mt-0.5 font-medium capitalize">{selectedCandidate.status || 'Unknown'}{selectedCandidate.framework_score != null ? ` · ${selectedCandidate.framework_score}/100` : ''}</dd></div></dl></div>}
             </div>
 
             <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1.15fr)_minmax(28rem,0.85fr)]">
@@ -496,13 +567,11 @@ export default function Evaluations() {
 
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
-              <Button type="submit" disabled={saving || !form.innovation_id || !allRated}>
-                {saving && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-                {editing ? 'Save Changes' : 'Save Assessment'}
-              </Button>
+              <Button type="button" disabled={saving} onClick={() => { if (!form.innovation_id || !allRated || !form.title.trim() || !form.grade_levels.trim() || (!editing && !selectedCandidate)) { setError('Select an eligible innovation and complete all five ratings and required fields.'); return; } setError(''); setReviewing(true); }}>Review Assessment <ArrowRight className="ml-1.5 h-4 w-4" /></Button>
             </DialogFooter>
               </div>
             </div>
+            </>}
           </form>
         </DialogContent>
       </Dialog>
@@ -515,7 +584,7 @@ export default function Evaluations() {
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={removeEvaluation} disabled={deleting} className="bg-rose-600 hover:bg-rose-700">
+            <AlertDialogAction onClick={(event) => { event.preventDefault(); removeEvaluation(); }} disabled={deleting} className="bg-rose-600 hover:bg-rose-700">
               {deleting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />} Remove Assessment
             </AlertDialogAction>
           </AlertDialogFooter>

@@ -98,7 +98,10 @@ export const api = {
   },
   evaluations: {
     list: listEvaluations,
+    candidates: () => request('/evaluations/candidates'),
+    get: (id) => request(`/evaluations/${id}`),
     create: (payload) => request('/evaluations', { method: 'POST', body: payload }),
+    review: (id, payload) => request(`/evaluations/${id}`, { method: 'PUT', body: { ...payload, from_candidate: true } }),
     update: (id, payload) => request(`/evaluations/${id}`, { method: 'PUT', body: payload }),
     remove: (id) => request(`/evaluations/${id}`, { method: 'DELETE' }),
   },

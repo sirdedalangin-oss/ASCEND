@@ -480,6 +480,83 @@ class AscendApiTest extends TestCase
             ->assertJsonPath('innovation.status', 'submitted');
     }
 
+    public function test_assessment_candidates_include_unassessed_and_automatic_reviews_in_both_focus_areas(): void
+    {
+        $adminToken = $this->adminToken();
+        $unassessed = $this->withToken($adminToken)->postJson('/api/innovations', [
+            'title' => 'Literacy candidate',
+            'learning_focus' => 'literacy',
+        ])->assertCreated()->json('id');
+        $automatic = $this->withToken($adminToken)->postJson('/api/innovations', [
+            'title' => 'Numeracy automatic review',
+            'learning_focus' => 'numeracy',
+        ])->assertCreated()->json('id');
+        $completed = $this->withToken($adminToken)->postJson('/api/innovations', [
+            'title' => 'Completed panel review',
+            'learning_focus' => 'literacy',
+        ])->assertCreated()->json('id');
+        $validated = $this->withToken($adminToken)->postJson('/api/innovations', [
+            'title' => 'Validated automatic review',
+            'learning_focus' => 'numeracy',
+        ])->assertCreated()->json('id');
+
+        Innovation::findOrFail($unassessed)->update(['learning_focus' => ' LITERACY ']);
+
+        Innovation::findOrFail($automatic)->update([
+            'framework_score' => 80,
+            'framework_ratings' => array_fill_keys(array_keys(ScalabilityFramework::CRITERIA), 4),
+            'evaluation_method' => 'AUTOMATIC_MANUSCRIPT_REVIEW',
+            'status' => ' EVALUATED ',
+        ]);
+        Innovation::findOrFail($completed)->update([
+            'framework_score' => 80,
+            'evaluation_method' => 'manual_panel_evaluation',
+            'status' => 'evaluated',
+        ]);
+        Innovation::findOrFail($validated)->update([
+            'framework_score' => 80,
+            'evaluation_method' => 'automatic_manuscript_review',
+            'status' => 'validated',
+        ]);
+
+        $this->withToken($this->registerToken())->getJson('/api/evaluations/candidates')->assertForbidden();
+        $candidates = $this->withToken($adminToken)->getJson('/api/evaluations/candidates')
+            ->assertOk()
+            ->assertJsonCount(2);
+        $this->assertEqualsCanonicalizing([$unassessed, $automatic], collect($candidates->json())->pluck('id')->all());
+        $candidates->assertJsonFragment(['id' => $unassessed, 'assessment_action' => 'create'])
+            ->assertJsonFragment(['id' => $automatic, 'assessment_action' => 'review']);
+
+        $payload = $this->assessmentPayload($automatic);
+        $this->withToken($adminToken)->postJson('/api/evaluations', $payload)->assertConflict();
+        $this->withToken($adminToken)->putJson("/api/evaluations/{$automatic}", [
+            ...collect($payload)->except('innovation_id')->all(),
+            'from_candidate' => true,
+        ])->assertOk()
+            ->assertJsonPath('evaluation_method', 'manual_panel_evaluation')
+            ->assertJsonPath('framework_score', 80);
+        $this->withToken($adminToken)->getJson('/api/evaluations/candidates')
+            ->assertOk()
+            ->assertJsonCount(1)
+            ->assertJsonPath('0.id', $unassessed);
+        $this->withToken($adminToken)->putJson("/api/evaluations/{$automatic}", [
+            ...collect($payload)->except('innovation_id')->all(),
+            'from_candidate' => true,
+        ])->assertConflict();
+
+        $this->withToken($adminToken)->postJson('/api/evaluations', [
+            ...$this->assessmentPayload($unassessed),
+            'learning_focus' => 'literacy',
+        ])->assertCreated();
+        $this->withToken($adminToken)->getJson('/api/evaluations/candidates')->assertOk()->assertJsonCount(0);
+        $this->withToken($adminToken)->deleteJson("/api/evaluations/{$automatic}")->assertOk();
+        $this->withToken($adminToken)->getJson('/api/evaluations/candidates')
+            ->assertOk()
+            ->assertJsonCount(1)
+            ->assertJsonPath('0.id', $automatic)
+            ->assertJsonPath('0.assessment_action', 'create');
+    }
+
     public function test_regular_user_cannot_record_change_or_remove_framework_assessments(): void
     {
         $adminToken = $this->adminToken();

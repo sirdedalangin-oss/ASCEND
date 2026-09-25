@@ -38,6 +38,7 @@ Route::middleware(AuthenticateApiToken::class)->group(function () {
     Route::post('/keywords', [KeywordController::class, 'store']);
 
     Route::get('/evaluations', [EvaluationRecordController::class, 'index']);
+    Route::get('/evaluations/candidates', [EvaluationRecordController::class, 'candidates']);
     Route::post('/evaluations', [EvaluationRecordController::class, 'store']);
     Route::get('/evaluations/{innovation}', [EvaluationRecordController::class, 'show']);
     Route::match(['put', 'patch'], '/evaluations/{innovation}', [EvaluationRecordController::class, 'update']);

@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Innovation;
 use App\Services\ScalabilityFramework;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -32,6 +33,24 @@ class EvaluationRecordController extends Controller
         );
     }
 
+    public function candidates(Request $request): JsonResponse
+    {
+        $this->ensureAdmin($request);
+
+        return response()->json(
+            $this->candidateQuery()
+                ->orderBy('learning_focus')
+                ->orderBy('title')
+                ->get()
+                ->map(function (Innovation $innovation): array {
+                    return [
+                        ...$innovation->toArray(),
+                        'assessment_action' => $innovation->framework_score === null ? 'create' : 'review',
+                    ];
+                })
+        );
+    }
+
     public function store(Request $request): JsonResponse
     {
         $this->ensureAdmin($request);
@@ -42,6 +61,9 @@ class EvaluationRecordController extends Controller
         $innovation = Innovation::findOrFail($data['innovation_id']);
         if ($innovation->framework_score !== null) {
             return response()->json(['message' => 'This innovation already has a framework assessment. Edit it instead.'], 409);
+        }
+        if (! $this->candidateQuery()->whereKey($innovation->id)->exists()) {
+            return response()->json(['message' => 'This innovation is not eligible for a new framework assessment.'], 409);
         }
         unset($data['innovation_id']);
         $data['title'] = $innovation->title;
@@ -57,6 +79,12 @@ class EvaluationRecordController extends Controller
 
     public function update(Request $request, Innovation $innovation): JsonResponse
     {
+        if ($request->boolean('from_candidate')) {
+            $this->ensureAdmin($request);
+            if (! $this->candidateQuery()->whereKey($innovation->id)->exists() || $innovation->framework_score === null) {
+                return response()->json(['message' => 'This innovation is no longer available for panel review. Refresh the assessment list.'], 409);
+            }
+        }
         $isAdmin = $request->user()->role === 'admin';
         $isOwner = $innovation->created_by_id === $request->user()->id
             && $innovation->framework_score !== null
@@ -140,6 +168,20 @@ class EvaluationRecordController extends Controller
     private function ensureAdmin(Request $request): void
     {
         abort_unless($request->user()?->role === 'admin', 403, 'Only administrators may record framework assessments.');
+    }
+
+    private function candidateQuery(): Builder
+    {
+        return Innovation::query()
+            ->whereRaw('LOWER(TRIM(learning_focus)) IN (?, ?)', ['literacy', 'numeracy'])
+            ->whereRaw('LOWER(TRIM(status)) IN (?, ?, ?)', ['submitted', 'evaluating', 'evaluated'])
+            ->where(function (Builder $query): void {
+                $query->whereNull('framework_score')
+                    ->orWhere(function (Builder $review): void {
+                        $review->whereNotNull('framework_score')
+                            ->whereRaw('LOWER(TRIM(evaluation_method)) IN (?, ?)', ['automatic_manuscript_review', 'manual_owner_correction']);
+                    });
+            });
     }
 
     /**

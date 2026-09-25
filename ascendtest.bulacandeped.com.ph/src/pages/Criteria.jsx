@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api } from '@/api/client';
 import { Card } from '@/components/ui/card';
+import FrameworkEmphasis from '@/components/ascend/FrameworkEmphasis';
 import { Loader2 } from 'lucide-react';
 
 export default function Criteria() {
@@ -49,7 +50,7 @@ export default function Criteria() {
               {Object.entries(framework.ratings).sort(([a], [b]) => Number(b) - Number(a)).map(([rating, description]) => (
                 <div key={rating} className="flex items-start gap-3 text-sm">
                   <span className="font-bold text-primary w-5 flex-shrink-0">{rating}</span>
-                  <p className="text-muted-foreground">{description}</p>
+                  <p className="text-muted-foreground"><FrameworkEmphasis text={description} /></p>
                 </div>
               ))}
             </div>
@@ -74,7 +75,7 @@ export default function Criteria() {
                       {level.minimum === 0 ? 'Below 75' : `${level.minimum}–${level.maximum}`}
                     </span>
                   </div>
-                  <p className="text-xs text-muted-foreground mt-1">{level.description}</p>
+                  <p className="text-xs text-muted-foreground mt-1"><FrameworkEmphasis text={level.description} /></p>
                 </div>
               ))}
             </div>

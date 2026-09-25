@@ -92,6 +92,7 @@ ascendtest.bulacandeped.com.ph/     Subdomain document root
    ```
 
 6. Upload only the contents of `ascendtest.bulacandeped.com.ph/dist/` to the cPanel subdomain document root.
+   Keep the built `.user.ini` in that root so PHP accepts manuscript uploads up to 20 MB (with a 25 MB POST limit).
 7. From the subdomain document root, create the public upload link:
 
    ```bash

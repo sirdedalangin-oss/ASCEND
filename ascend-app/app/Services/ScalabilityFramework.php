@@ -25,13 +25,13 @@ class ScalabilityFramework
     ];
 
     public const LEVELS = [
-        ['minimum' => 95, 'maximum' => 100, 'title' => 'Platinum Scalable Innovation', 'description' => 'Demonstrates exceptional potential for division-wide implementation. The innovation serves as a model practice with outstanding impact, adaptability, sustainability, and resource efficiency.'],
-        ['minimum' => 90, 'maximum' => 94, 'title' => 'Gold Scalable Innovation', 'description' => 'Demonstrates very strong potential for division-wide implementation. The innovation is highly adaptable, sustainable, and capable of producing substantial educational benefits.'],
-        ['minimum' => 85, 'maximum' => 89, 'title' => 'Silver Scalable Innovation', 'description' => 'Demonstrates high potential for implementation across the division. The innovation effectively addresses common educational needs and can be adopted with reasonable support.'],
-        ['minimum' => 80, 'maximum' => 84, 'title' => 'Bronze Scalable Innovation', 'description' => 'Meets the standards for division-wide implementation. The innovation shows clear scalability potential but may require minor refinements or enhancements.'],
-        ['minimum' => 75, 'maximum' => 79, 'title' => 'Qualified Scalable Innovation', 'description' => 'Meets the minimum requirements for scalability. The innovation may be scaled but would benefit from further validation, improvement, or support mechanisms.'],
-        ['minimum' => 0, 'maximum' => 74, 'title' => 'Not Yet Recommended for Scaling', 'description' => 'The innovation requires additional development, evidence, or refinement before division-wide implementation may be considered.'],
-    ];
+    ['minimum' => 95, 'maximum' => 100, 'title' => 'Platinum Scalable Innovation', 'description' => 'Demonstrates exceptional potential for <strong>regional-wide implementation</strong>. The innovation serves as a model practice with outstanding impact, adaptability, sustainability, and resource efficiency.'],
+    ['minimum' => 90, 'maximum' => 94, 'title' => 'Gold Scalable Innovation', 'description' => 'Demonstrates very strong potential for <strong>division-wide implementation</strong>. The innovation is highly adaptable, sustainable, and capable of producing substantial educational benefits.'],
+    ['minimum' => 85, 'maximum' => 89, 'title' => 'Silver Scalable Innovation', 'description' => 'Demonstrates high potential for <strong>district-wide implementation</strong>. The innovation effectively addresses common educational needs and can be adopted with reasonable support.'],
+    ['minimum' => 80, 'maximum' => 84, 'title' => 'Bronze Scalable Innovation', 'description' => 'Meets the standards for <strong>school cluster-wide or district-level</strong> pilot implementation. The innovation shows clear scalability potential but may require minor refinements or enhancements before broader adoption.'],
+    ['minimum' => 75, 'maximum' => 79, 'title' => 'Qualified Scalable Innovation', 'description' => 'Meets the minimum requirements for <strong>school-level implementation and validation</strong>. The innovation may be scaled further but would benefit from additional evidence, improvement, or support mechanisms.'],
+    ['minimum' => 0, 'maximum' => 74, 'title' => 'Not Yet Recommended for Scaling', 'description' => 'The innovation requires additional development, evidence, or refinement before implementation beyond the originating school may be considered.'],
+];
 
     /**
      * @param  array<string, int>  $ratings

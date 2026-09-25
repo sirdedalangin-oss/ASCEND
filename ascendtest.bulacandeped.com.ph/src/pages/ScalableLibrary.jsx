@@ -19,6 +19,7 @@ import {
   UsersRound,
 } from 'lucide-react';
 import { api } from '@/api/client';
+import FrameworkEmphasis from '@/components/ascend/FrameworkEmphasis';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { manuscriptUrl } from '@/lib/manuscriptUrl';
@@ -164,7 +165,7 @@ export default function ScalableLibrary() {
                   </div>
                   <div className="mt-5">
                     <div className="mb-2 flex items-start justify-between gap-2"><h3 className="min-w-0 text-base font-semibold leading-5">{category.title}</h3><span className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-bold ${appearance?.surface || 'bg-primary/10'} ${appearance?.accent || 'text-primary'}`}>{rangeLabel(category)} points</span></div>
-                    <p className="line-clamp-3 min-h-[4.5rem] text-sm leading-6 text-muted-foreground">{category.description}</p>
+                    <p className="line-clamp-3 min-h-[4.5rem] text-sm leading-6 text-muted-foreground"><FrameworkEmphasis text={category.description} /></p>
                   </div>
                   <div className="mt-5 flex items-center justify-between border-t pt-4 text-sm font-semibold text-primary"><span>View innovations</span><ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" aria-hidden="true" /></div>
                 </button>
